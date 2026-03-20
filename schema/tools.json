@@ -1,0 +1,143 @@
+{
+  "name": "hailmary",
+  "description": "Structured browser automation framework. Use these tools to interact with websites deterministically.",
+  "tools": [
+    {
+      "name": "navigate",
+      "description": "Go to a URL. Use this first to load any website.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "The full URL to navigate to (e.g., https://www.facebook.com/messages)"
+          },
+          "waitUntil": {
+            "type": "string",
+            "enum": ["load", "domcontentloaded", "networkidle"],
+            "default": "networkidle",
+            "description": "When to consider navigation complete"
+          },
+          "timeout": {
+            "type": "number",
+            "default": 30000,
+            "description": "Timeout in milliseconds"
+          }
+        },
+        "required": ["url"]
+      }
+    },
+    {
+      "name": "click",
+      "description": "Click on an element. Use text to click on something containing that text, or selector for CSS selector.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "Text contained in the element to click (e.g., 'Send Message' or 'Ray')"
+          },
+          "selector": {
+            "type": "string",
+            "description": "CSS selector to click (e.g., 'button.submit', 'a[href=\"/messages\"]')"
+          },
+          "index": {
+            "type": "number",
+            "default": 0,
+            "description": "Index of element to click if multiple matches (0 = first)"
+          }
+        }
+      }
+    },
+    {
+      "name": "type",
+      "description": "Type text into an input field.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "selector": {
+            "type": "string",
+            "description": "CSS selector for the input field (e.g., 'input[type=\"text\"]', '#message')"
+          },
+          "text": {
+            "type": "string",
+            "description": "The text to type"
+          },
+          "pressEnter": {
+            "type": "boolean",
+            "default": false,
+            "description": "Whether to press Enter after typing"
+          }
+        },
+        "required": ["selector", "text"]
+      }
+    },
+    {
+      "name": "screenshot",
+      "description": "Take a screenshot of the current page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filename": {
+            "type": "string",
+            "description": "Optional filename for the screenshot"
+          },
+          "fullPage": {
+            "type": "boolean",
+            "default": false,
+            "description": "Whether to capture the full scrollable page"
+          }
+        }
+      }
+    },
+    {
+      "name": "getText",
+      "description": "Get text content from the page or specific elements.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "selector": {
+            "type": "string",
+            "description": "Optional CSS selector to get text from specific elements"
+          }
+        }
+      }
+    },
+    {
+      "name": "getUrl",
+      "description": "Get the current URL of the page.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "wait",
+      "description": "Wait for a specified time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "milliseconds": {
+            "type": "number",
+            "default": 2000,
+            "description": "How long to wait in milliseconds"
+          }
+        }
+      }
+    },
+    {
+      "name": "pressKey",
+      "description": "Press a keyboard key.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "The key to press (e.g., 'Enter', 'Escape', 'ArrowDown')"
+          }
+        },
+        "required": ["key"]
+      }
+    }
+  ]
+}
