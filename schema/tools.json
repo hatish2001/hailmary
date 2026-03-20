@@ -242,6 +242,20 @@
         },
         "required": ["url"]
       }
+    },
+    {
+      "name": "enterPin",
+      "description": "Enter PIN code into Facebook's encrypted chat PIN dialog. Automatically detects the dialog, focuses the input, types the PIN (120106), and presses Enter.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pin": {
+            "type": "string",
+            "default": "120106",
+            "description": "The PIN code to enter (defaults to 120106)"
+          }
+        }
+      }
     }
   ]
 }
