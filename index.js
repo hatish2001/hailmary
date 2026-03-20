@@ -3,6 +3,7 @@ const tools = require('./schema/tools.json');
 
 // Import actions
 const actions = {
+  login: require('./actions/login'),
   navigate: require('./actions/navigate'),
   click: require('./actions/click'),
   type: require('./actions/type'),
@@ -11,6 +12,7 @@ const actions = {
   getUrl: require('./actions/getUrl'),
   wait: require('./actions/wait'),
   pressKey: require('./actions/pressKey'),
+  close: closeBrowser,
 };
 
 // Execute a tool by name with parameters
@@ -18,6 +20,7 @@ async function executeTool(toolName, params = {}) {
   if (!actions[toolName]) {
     return {
       success: false,
+      error: 'UNKNOWN_TOOL',
       message: `Unknown tool: ${toolName}. Available tools: ${Object.keys(actions).join(', ')}`
     };
   }
@@ -26,7 +29,11 @@ async function executeTool(toolName, params = {}) {
     const result = await actions[toolName](params);
     return result;
   } catch (e) {
-    return { success: false, message: `Error executing ${toolName}: ${e.message}` };
+    return { 
+      success: false, 
+      error: 'EXECUTION_ERROR',
+      message: `Error executing ${toolName}: ${e.message}` 
+    };
   }
 }
 
@@ -36,9 +43,8 @@ async function executeSequence(toolsToRun) {
   for (const { tool, params } of toolsToRun) {
     const result = await executeTool(tool, params);
     results.push({ tool, params, result });
-    if (!result.success) {
+    if (!result.success && result.error) {
       console.log(`[HAILMARY] ${tool} failed: ${result.message}`);
-      // Continue anyway unless it's critical
     }
   }
   return results;
@@ -50,6 +56,7 @@ async function main() {
   if (args.length === 0) {
     console.log('Usage: node index.js <tool> [params-json]');
     console.log('Example: node index.js navigate \'{"url":"https://google.com"}\'');
+    console.log('Example: node index.js login \'{"site":"facebook"}\'');
     console.log('\nAvailable tools:', Object.keys(actions).join(', '));
     return;
   }

@@ -3,6 +3,38 @@
   "description": "Structured browser automation framework. Use these tools to interact with websites deterministically.",
   "tools": [
     {
+      "name": "login",
+      "description": "Log into a website using saved cookies. Provides a logged-in session ready to browse.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site": {
+            "type": "string",
+            "enum": ["facebook", "ebay", "gmail", "custom"],
+            "description": "Which site to log into"
+          },
+          "cookieFile": {
+            "type": "string",
+            "description": "Path to cookie JSON file (defaults to built-in paths)"
+          },
+          "cookies": {
+            "type": "array",
+            "description": "Raw cookie array (alternative to cookieFile)"
+          },
+          "url": {
+            "type": "string",
+            "description": "URL to navigate to after login (defaults to site's home page)"
+          },
+          "headless": {
+            "type": "boolean",
+            "default": true,
+            "description": "Run browser in headless mode"
+          }
+        },
+        "required": ["site"]
+      }
+    },
+    {
       "name": "navigate",
       "description": "Go to a URL. Use this first to load any website.",
       "parameters": {
@@ -137,6 +169,14 @@
           }
         },
         "required": ["key"]
+      }
+    },
+    {
+      "name": "close",
+      "description": "Close the browser and cleanup.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
       }
     }
   ]
