@@ -178,6 +178,51 @@
         "type": "object",
         "properties": {}
       }
+    },
+    {
+      "name": "marketplaceSearch",
+      "description": "Search Facebook Marketplace with filters. Automatically logs in, navigates to marketplace, types the query, and returns structured results.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "REQUIRED. Search term (e.g., 'ps5', 'iphone', 'bicycle')"
+          },
+          "category": {
+            "type": "string",
+            "enum": ["vehicles", "electronics", "clothing", "furniture", "property", "rentals"],
+            "description": "Category to search in. Defaults to all categories."
+          },
+          "location": {
+            "type": "string",
+            "description": "Location to search in (e.g., 'San Jose, CA'). Defaults to your saved location."
+          },
+          "priceMin": {
+            "type": "number",
+            "description": "Minimum price filter"
+          },
+          "priceMax": {
+            "type": "number",
+            "description": "Maximum price filter"
+          },
+          "condition": {
+            "type": "string",
+            "enum": ["new", "used", "used_like_new"],
+            "description": "Item condition filter"
+          },
+          "radius": {
+            "type": "number",
+            "description": "Search radius in miles"
+          },
+          "sortBy": {
+            "type": "string",
+            "enum": ["newest", "price_asc", "price_desc", "relevance"],
+            "description": "How to sort results"
+          }
+        },
+        "required": ["query"]
+      }
     }
   ]
 }

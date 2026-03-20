@@ -4,6 +4,7 @@ const tools = require('./schema/tools.json');
 // Import actions
 const actions = {
   login: require('./actions/login'),
+  marketplaceSearch: require('./actions/marketplaceSearch'),
   navigate: require('./actions/navigate'),
   click: require('./actions/click'),
   type: require('./actions/type'),
