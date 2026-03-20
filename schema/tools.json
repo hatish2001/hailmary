@@ -223,6 +223,25 @@
         },
         "required": ["query"]
       }
+    },
+    {
+      "name": "analyzeProduct",
+      "description": "Go to a Facebook Marketplace product URL and analyze it. Extracts title, price, location, condition, description, seller info, and optionally captures gallery screenshots.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "REQUIRED. The Facebook Marketplace item URL (e.g., https://www.facebook.com/marketplace/item/123456/)"
+          },
+          "galleryScreenshots": {
+            "type": "boolean",
+            "default": true,
+            "description": "Whether to capture gallery images (true/false)"
+          }
+        },
+        "required": ["url"]
+      }
     }
   ]
 }

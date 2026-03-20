@@ -266,29 +266,64 @@ async function extractResults(page) {
         const href = await link.getAttribute('href');
         const text = await link.textContent();
         
-        // Format is typically: "$PRICE TITLE LOCATION"
-        // Or: "Just listed$PRICETitleLocation"
+        // Step 1: Extract price first (before messing with location)
+        const allPrices = text.match(/\$[\d,]+(?:\.\d{2})?/g) || [];
+        // Use the price closest to the start of text (usually the listing price)
+        const price = allPrices.length > 0 ? allPrices[0] : null;
         
-        // Extract price (all $XX patterns)
-        const priceMatches = text.match(/\$[\d,]+(?:\.\d{2})?/g);
-        const price = priceMatches ? priceMatches[0] : null;
-        
-        // Extract location - look for city, state pattern at the end
-        const locationMatch = text.match(/([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*,\s*[A-Z]{2})/);
-        const location = locationMatch ? locationMatch[1] : null;
-        
-        // Extract title - remove price and location from text
-        let title = text;
-        if (price) {
-          title = title.replace(price, '');
+        // Step 2: Remove price from text to simplify location extraction
+        let textWithoutPrice = text;
+        for (const p of allPrices) {
+          textWithoutPrice = textWithoutPrice.replace(p, ' ');
         }
-        if (location) {
-          title = title.replace(location, '');
+        
+        // Step 3: Find location at end (using cleaned text)
+        const stateMatch = textWithoutPrice.match(/, ([A-Z]{2})$/);
+        let location = null;
+        let beforeLocation = '';
+        
+        if (stateMatch) {
+          const commaIndex = stateMatch.index;
+          const state = stateMatch[1];
+          const beforeComma = textWithoutPrice.slice(0, commaIndex);
+          
+          // Find city start by looking backwards for transition
+          let cityStart = -1;
+          
+          for (let i = commaIndex - 1; i >= 0; i--) {
+            const curr = beforeComma[i];
+            const next = beforeComma[i + 1];
+            
+            if (curr === ' ' && /[A-Z]/.test(next)) {
+              cityStart = i + 1;
+              break;
+            }
+            if (/[a-z]/.test(curr) && /[A-Z]/.test(next)) {
+              cityStart = i + 1;
+              break;
+            }
+          }
+          
+          if (cityStart < 0) {
+            const lastSpace = beforeComma.lastIndexOf(' ');
+            cityStart = Math.max(0, lastSpace + 1);
+          }
+          
+          location = beforeComma.slice(cityStart) + ', ' + state;
+          beforeLocation = beforeComma.slice(0, cityStart);
         }
-        // Clean up "Just listed" or other prefixes
-        title = title.replace(/Just listed/i, '').trim();
-        title = title.replace(/Partner listing/i, '').trim();
-        title = title.slice(0, 100).trim();
+        
+        // Step 4: Title = everything before location
+        let title = beforeLocation || textWithoutPrice;
+        
+        // Clean up
+        title = title
+          .replace(/^Just listed\s*/i, '')
+          .replace(/^Partner listing\s*/i, '')
+          .replace(/^[\s—–-]+/, '')
+          .replace(/\s+/g, ' ')
+          .trim()
+          .slice(0, 100);
         
         if (title && price) {
           results.push({

@@ -5,6 +5,7 @@ const tools = require('./schema/tools.json');
 const actions = {
   login: require('./actions/login'),
   marketplaceSearch: require('./actions/marketplaceSearch'),
+  analyzeProduct: require('./actions/analyzeProduct'),
   navigate: require('./actions/navigate'),
   click: require('./actions/click'),
   type: require('./actions/type'),
