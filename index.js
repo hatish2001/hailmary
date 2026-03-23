@@ -83,12 +83,18 @@ async function main() {
   console.log(JSON.stringify(result, null, 2));
 }
 
+const { orchestrate } = require('./orchestrator');
+
+const { orchestrate, orchestrateStep } = require('./orchestrator');
+
 module.exports = {
   executeTool,
   executeSequence,
   tools,
   launchBrowser,
-  closeBrowser
+  closeBrowser,
+  orchestrate,
+  orchestrateStep,
 };
 
 // Run if called directly

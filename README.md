@@ -1,94 +1,148 @@
 # Hailmary
 
-**Structured browser automation framework with deterministic tool calls.**
-
-The goal: Make browser automation feel like natural tool use — the model reads a clear tool definition, passes structured input, gets predictable output. No more brittle ad-hoc scripts.
+**Structured browser automation framework with deterministic tool calls — and an intelligent orchestrator that maps pages and reasons through them.**
 
 ## The Problem
 
 Current browser automation is messy:
 - Scripts scattered everywhere, inconsistent interfaces
-- Hard to predict what will happen
-- No clear schema for what actions are available
-- Model has to guess/hope instead of knowing
+- Model has to guess/hope instead of knowing exactly what elements exist
+- No comprehensive page map — tools work blind, taking screenshots and hoping
 
 ## The Solution
 
-Hailmary provides:
-1. **Clean tool definitions** — JSON schema describing every available action
+1. **Clean tool definitions** — every action has a clear contract
 2. **Deterministic execution** — same input → same action → same result
-3. **Modular actions** — each action is a standalone module
-4. **Model-first design** — designed to be called by an AI, not written by one
+3. **`bn_map_page_deep`** — comprehensive page mapper that runs BEFORE any action
+   - Triggers lazy loads via scrolling
+   - Extracts ALL elements: inputs, buttons, links, images, headings, forms, lists, modals, ARIA elements
+   - Every element has exact attributes, selectors, visibility, position
+   - No more guessing — tools read the map and act precisely
+4. **Orchestrator** — sub-agent that takes a goal, maps the page, reasons, and executes
 
 ## Structure
 
 ```
 hailmary/
-├── index.js           # Main entry - executeTool(toolName, params)
+├── index.js              # Main entry - executeTool(), orchestrate()
+├── orchestrator.js       # AI orchestrator - goal → map → reason → act
 ├── browser/
-│   └── manager.js    # Browser lifecycle (launch/close/getPage)
+│   └── manager.js       # Browser lifecycle (launch/close/getPage)
 ├── actions/
-│   ├── navigate.js   # Go to URL
-│   ├── click.js      # Click elements
-│   ├── type.js       # Type into inputs
-│   ├── screenshot.js # Take screenshots
-│   ├── getText.js    # Extract text
-│   ├── getUrl.js     # Get current URL
-│   ├── wait.js       # Wait/delay
-│   └── pressKey.js   # Press keyboard keys
-├── schema/
-│   └── tools.json    # Tool definitions for the model
-└── examples/
-    └── ...
+│   ├── bn_map_page_deep.js  # ⭐ Comprehensive page mapper
+│   ├── navigate.js       # Go to URL
+│   ├── click.js          # Click element (selector or text)
+│   ├── type.js           # Type into inputs
+│   ├── screenshot.js     # Take screenshots
+│   ├── getText.js        # Extract text
+│   ├── getUrl.js         # Get current URL
+│   ├── wait.js           # Wait/delay
+│   ├── pressKey.js       # Press keyboard keys
+│   ├── login.js          # Facebook login
+│   ├── marketplaceSearch.js  # FB Marketplace search
+│   └── analyzeProduct.js # Analyze listing details
+└── schema/
+    └── tools.json        # Tool definitions for the model
 ```
+
+## Core Loop
+
+```
+User goal → bn_map_page_deep → Get full page map → Reason with model → Execute actions → Done
+```
+
+**Every action on a new page starts with `bn_map_page_deep`.** The orchestrator maps first, then decides.
+
+## bn_map_page_deep
+
+Comprehensive page mapper. Extracts:
+
+| Category | Details |
+|----------|---------|
+| `inputs` | type, name, id, placeholder, value, disabled, aria-label, autocomplete |
+| `buttons` | text, type, disabled, aria-label, aria-pressed |
+| `links` | href, target, text, aria-label |
+| `images` | src, alt, naturalWidth/Height, lazy status |
+| `headings` | h1-h6 with text and position |
+| `forms` | action, method, input count |
+| `lists` | ul/ol with up to 50 items |
+| `modals` | dialog elements, open state |
+| `clickable` | divs/spans with click handlers or role=button |
+| `searchable` | search inputs with exact selectors |
+| `ariaElements` | all elements with ARIA roles |
+| `disabledElements` | disabled form controls |
+| `lazyImages` | not-yet-loaded images |
+
+Returns `summary` (quick stats + top headings + search inputs) and full `map` (all elements with rect positions and attributes).
+
+## Orchestrator
+
+Sub-agent that takes a natural language goal and executes browser actions autonomously.
+
+```javascript
+const { orchestrate } = require('hailmary');
+
+const result = await orchestrate({
+  goal: 'search for ps5 in los angeles on facebook marketplace',
+  url: 'https://www.facebook.com/marketplace',
+  apiKey: 'your-openai-or-minimax-api-key',  // optional — falls back to env
+  model: 'MiniMax-M2.7',                      // optional
+  maxSteps: 5                                 // optional, default 5
+});
+
+console.log(result.success);     // true/false
+console.log(result.finalUrl);    // final URL after all steps
+console.log(result.results);     // array of step results with reasoning
+```
+
+The orchestrator:
+1. Navigates to URL
+2. Runs `bn_map_page_deep`
+3. Sends map + goal to the model
+4. Model outputs a JSON plan with reasoning + actions
+5. Executes the actions
+6. Repeats until done or max steps
 
 ## Available Tools
 
 | Tool | Description | Key Params |
 |------|-------------|------------|
 | `navigate` | Go to a URL | `url`, `waitUntil`, `timeout` |
-| `click` | Click element | `text` OR `selector`, `index` |
+| `bn_map_page_deep` | ⭐ Map all page elements | `maxScrolls`, `scrollDelay` |
+| `click` | Click element | `selector` OR `text`, `index` |
 | `type` | Type text | `selector`, `text`, `pressEnter` |
 | `screenshot` | Take screenshot | `filename`, `fullPage` |
 | `getText` | Get text content | `selector` (optional) |
 | `getUrl` | Get current URL | - |
 | `wait` | Wait time | `milliseconds` |
 | `pressKey` | Press key | `key` |
+| `login` | Facebook login | `cookieFile` (auto) |
+| `loginAndSearch` | Login + search | `site`, `searchTerm` |
+| `marketplaceSearch` | Search Marketplace | `query`, `location` |
+| `analyzeProduct` | Analyze listing | `url` |
+| `enterPin` | Enter 2FA PIN | `pin` |
 
-## Usage
-
-```javascript
-const { executeTool, executeSequence, launchBrowser, closeBrowser } = require('hailmary');
-
-async function main() {
-  await launchBrowser({ headless: false, cookieFile: 'facebook' });
-
-  await executeTool('navigate', { url: 'https://facebook.com/messages' });
-  await executeTool('click', { text: 'John Smith' });
-  await executeTool('screenshot', { filename: 'chat.png' });
-
-  await closeBrowser();
-}
-
-main();
-```
-
-### CLI
+## CLI Usage
 
 ```bash
-node index.js navigate '{"url":"https://google.com"}'
-node index.js screenshot '{"filename":"test.png"}'
-node index.js getUrl '{}'
+# Direct tool execution
+node index.js navigate '{"url":"https://facebook.com/marketplace"}'
+node index.js bn_map_page_deep '{}'
+node index.js screenshot '{"filename":"page.png"}'
+
+# Orchestrator (goal + url)
+node orchestrator.js "search for ps5" "https://www.facebook.com/marketplace"
 ```
 
 ## Design Principles
 
-1. **Deterministic** — No randomness. If something can fail, say so clearly.
-2. **Schema-first** — The tool definition IS the contract.
-3. **Fail fast** — Return clear error messages, don't silently swallow issues.
-4. **Composable** — Actions can be chained in sequences.
-5. **No magic** — Explicit is better than implicit.
+1. **Map first, act second** — Never guess what elements exist
+2. **Deterministic** — No randomness. Clear success/failure.
+3. **Schema-first** — The tool definition IS the contract.
+4. **Fail fast** — Return clear error messages.
+5. **Composable** — Actions chain in sequences.
+6. **No magic** — Explicit is better than implicit.
 
 ## Status
 
-🚧 Under active development. Currently supporting basic actions. More coming.
+🚧 Under active development. `bn_map_page_deep` and orchestrator are new.
