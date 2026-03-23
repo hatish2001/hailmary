@@ -1,0 +1,13 @@
+# Credentials - NEVER commit these
+data/credentials.json
+
+# Cookies - session data
+data/cookies/*.json
+
+# Screenshots
+data/screenshots/*.png
+
+# OS files
+.DS_Store
+Thumbs.db
+data/cookies/

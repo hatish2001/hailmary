@@ -2,6 +2,9 @@ const { launchBrowser, closeBrowser, getPage } = require('../browser/manager');
 const fs = require('fs');
 const path = require('path');
 
+// Persistent browser profile - survives across process restarts
+const PERSISTENT_PROFILE_DIR = '/home/ubuntu/.openclaw/workspace/data/browser-profiles/facebook';
+
 // Self-contained cookie storage within hailmary
 const HAILMARY_DATA = '/home/ubuntu/.openclaw/workspace/hailmary/data';
 const COOKIE_DIR = path.join(HAILMARY_DATA, 'cookies');
@@ -97,7 +100,7 @@ function loadCookies(site) {
   return JSON.parse(fs.readFileSync(filePath, 'utf8'));
 }
 
-async function login({ site, cookieFile, cookies, url, headless = true }) {
+async function login({ site, cookieFile, cookies, url, headless = false }) {
   // Validate site
   if (!site) {
     return {
@@ -167,8 +170,22 @@ async function login({ site, cookieFile, cookies, url, headless = true }) {
   // Close any existing browser session
   await closeBrowser();
 
+  // For Facebook, use persistent profile to maintain browser fingerprint
+  // For other sites, use default temp profile
+  let browserOptions = { headless };
+  if (siteLower === 'facebook') {
+    if (!fs.existsSync(PERSISTENT_PROFILE_DIR)) {
+      fs.mkdirSync(PERSISTENT_PROFILE_DIR, { recursive: true });
+    }
+    browserOptions = {
+      headless,
+      useFreshProfile: false,
+      userDataDir: PERSISTENT_PROFILE_DIR
+    };
+  }
+
   // Launch browser
-  const browser = await launchBrowser({ headless });
+  const browser = await launchBrowser(browserOptions);
   const context = browser.context;
   const page = browser.page;
 

@@ -5,7 +5,15 @@ const fs = require('fs');
 const SCREENSHOT_DIR = '/home/ubuntu/.openclaw/workspace/data/screenshots';
 
 async function screenshot({ filename, fullPage = false } = {}) {
-  const page = await getPage();
+  const { launchBrowser } = require('../browser/manager');
+  // Launch headless browser for screenshots to avoid display issues
+  let browser;
+  try {
+    browser = await launchBrowser({ headless: true, userDataDir: '/home/ubuntu/.openclaw/workspace/data/browser-profiles/facebook' });
+  } catch (e) {
+    return { success: false, message: `Failed to launch browser: ${e.message}` };
+  }
+  const page = browser.page;
 
   if (!fs.existsSync(SCREENSHOT_DIR)) {
     fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });

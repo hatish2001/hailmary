@@ -3,66 +3,79 @@ const { getPage } = require('../browser/manager');
 /**
  * Facebook Marketplace Search Action
  * 
- * Navigates to Facebook Marketplace and performs a search with optional filters.
+ * Uses URL-based search instead of UI interaction for reliability.
  * 
  * INPUT PARAMETERS:
  * {
- *   query: "ps5",                    // REQUIRED: Search term
- *   category: "electronics",          // OPTIONAL: vehicles|electronics|clothing|furniture|property|rentals
- *   location: "San Jose, CA",        // OPTIONAL: Location to search in
- *   priceMin: 100,                   // OPTIONAL: Minimum price
- *   priceMax: 500,                   // OPTIONAL: Maximum price
+ *   query: "bmw 330i",               // REQUIRED: Search term
+ *   category: "vehicles",              // OPTIONAL: vehicles|electronics|clothing|furniture|property|rentals
+ *   location: "Upland, CA",          // OPTIONAL: Location to search in
+ *   priceMin: 10000,                  // OPTIONAL: Minimum price
+ *   priceMax: 35000,                 // OPTIONAL: Maximum price
  *   condition: "used",               // OPTIONAL: new|used_like_new|used
- *   radius: 25,                     // OPTIONAL: Search radius in miles
+ *   radius: 50,                     // OPTIONAL: Search radius in miles
  *   sortBy: "newest"                // OPTIONAL: newest|price_asc|price_desc|relevance
  * }
  * 
  * OUTPUT:
  * {
  *   success: true,
- *   query: "ps5",
+ *   query: "bmw 330i",
  *   resultsCount: 24,
  *   results: [
- *     { title: "PlayStation 5 Console", price: "$175", location: "San Jose, CA", url: "...", image: "..." },
+ *     { title: "BMW 330i 2022", price: "$32,500", location: "Upland, CA", url: "..." },
  *     ...
  *   ],
  *   screenshot: "/path/to/screenshot.png"
  * }
  */
 
-const MARKETPLACE_URL = 'https://www.facebook.com/marketplace';
+const BASE_URL = 'https://www.facebook.com/marketplace';
 
 // Category to URL mapping
-const CATEGORY_URLS = {
-  vehicles: 'https://www.facebook.com/marketplace/san-jose/vehicles',
-  electronics: 'https://www.facebook.com/marketplace/san-jose/electronics',
-  clothing: 'https://www.facebook.com/marketplace/san-jose/clothing',
-  furniture: 'https://www.facebook.com/marketplace/san-jose/furniture',
-  property: 'https://www.facebook.com/marketplace/san-jose/property',
-  rentals: 'https://www.facebook.com/marketplace/san-jose/rentals',
+const CATEGORY_SLUGS = {
+  vehicles: 'vehicles',
+  electronics: 'electronics',
+  clothing: 'clothing',
+  furniture: 'furniture',
+  property: 'property',
+  rentals: 'rentals',
 };
 
-// Search input selectors (tried in order)
-const SEARCH_INPUT_SELECTORS = [
-  'input[aria-label="Search Marketplace"]',
-  'input[role="combobox"][aria-label*="Search"]',
-  'input[type="search"][placeholder*="Marketplace"]',
-];
+function buildSearchUrl({ query, category, location, priceMin, priceMax, radius }) {
+  // Build location slug
+  let locationSlug = 'san-jose'; // default
+  if (location) {
+    // Handle "Upland, CA" -> "upland" 
+    locationSlug = location.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+    // Handle multi-word like "san-jose"
+    if (locationSlug.split('-').length > 1) {
+      // Already slug-like, keep as is
+    }
+  }
+  
+  // Build category path
+  let categoryPath = '';
+  if (category && CATEGORY_SLUGS[category]) {
+    categoryPath = `/${CATEGORY_SLUGS[category]}`;
+  }
+  
+  // Build URL: https://www.facebook.com/marketplace/[location][category]?query=searchTerm
+  let url = `${BASE_URL}/${locationSlug}${categoryPath}`;
+  
+  // Add query params
+  const params = new URLSearchParams();
+  if (query) params.set('query', query);
+  
+  const urlStr = url + '?' + params.toString();
+  return urlStr;
+}
 
-// Filter button selectors
-const FILTER_SELECTORS = {
-  location: '[aria-label*="Location"]',
-  price: '[aria-label*="Price"]',
-  category: '[aria-label*="Category"]',
-  condition: '[aria-label*="Condition"]',
-};
-
-// Results selectors
+// Results selectors - updated for current Facebook Marketplace
 const RESULT_SELECTORS = [
-  '[role="article"]',
   'a[href*="/marketplace/item/"]',
-  '[data-testid="marketplace-listings-card"]',
-  'div[aria-label*="$"]',
+  '[role="article"] a[href*="/marketplace/"]',
+  'div[aria-label*="$"] a[href*="/marketplace/"]',
 ];
 
 async function marketplaceSearch({ 
@@ -78,7 +91,6 @@ async function marketplaceSearch({
 }) {
   const page = await getPage();
   
-  // Validate required params
   if (!query) {
     return {
       success: false,
@@ -87,82 +99,48 @@ async function marketplaceSearch({
     };
   }
   
-  // Determine URL to navigate to
-  let targetUrl = MARKETPLACE_URL;
-  if (category && CATEGORY_URLS[category]) {
-    targetUrl = CATEGORY_URLS[category];
-  }
-  if (location) {
-    // Replace "san-jose" placeholder with actual location slug
-    const locationSlug = location.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
-    targetUrl = targetUrl.replace('/marketplace', `/marketplace/${locationSlug}`);
-    if (category && CATEGORY_URLS[category]) {
-      targetUrl = CATEGORY_URLS[category].replace('/san-jose', `/${locationSlug}`);
-    }
-  }
+  // Build and navigate to search URL
+  const searchUrl = buildSearchUrl({ query, category, location, priceMin, priceMax, radius });
   
-  // Navigate to marketplace
   try {
-    await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
-    await page.waitForTimeout(2500);
+    await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await page.waitForTimeout(4000); // Wait for JS to render listings
   } catch (e) {
-    // Fallback to main marketplace
-    await page.goto(MARKETPLACE_URL, { waitUntil: 'domcontentloaded', timeout: 15000 });
-    await page.waitForTimeout(2500);
+    // Fallback to basic marketplace search
+    const fallbackUrl = `${BASE_URL}/san-jose?query=${encodeURIComponent(query)}`;
+    await page.goto(fallbackUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await page.waitForTimeout(4000);
   }
   
-  // Find and fill the search input
-  let searchInput = null;
-  for (const selector of SEARCH_INPUT_SELECTORS) {
-    try {
-      if (await page.isVisible(selector)) {
-        searchInput = page.locator(selector).first();
-        break;
-      }
-    } catch (e) {
-      // Try next selector
-    }
+  // Apply filters via URL params if provided
+  const currentUrl = page.url();
+  const urlObj = new URL(currentUrl);
+  
+  if (priceMin !== undefined) urlObj.searchParams.set('minPrice', priceMin);
+  if (priceMax !== undefined) urlObj.searchParams.set('maxPrice', priceMax);
+  if (radius !== undefined) urlObj.searchParams.set('radius', radius);
+  
+  if (urlObj.toString() !== currentUrl) {
+    await page.goto(urlObj.toString(), { waitUntil: 'domcontentloaded', timeout: 15000 });
+    await page.waitForTimeout(3000);
   }
   
-  if (!searchInput) {
-    return {
-      success: false,
-      error: 'SEARCH_INPUT_NOT_FOUND',
-      message: 'Could not find the Marketplace search input',
-      hint: 'Try waiting longer for the page to load'
-    };
-  }
-  
-  // Clear and fill search
-  await searchInput.clear();
-  await searchInput.fill(query);
-  await page.waitForTimeout(500);
-  
-  // Press Enter to search
-  await page.keyboard.press('Enter');
-  await page.waitForTimeout(3000);
-  
-  // Apply filters if provided
-  if (priceMin !== undefined || priceMax !== undefined || condition || radius) {
-    await applyFilters(page, { priceMin, priceMax, condition, radius });
-  }
-  
-  // Apply sort if provided
+  // Apply sort if provided (via UI since URL sort can be tricky)
   if (sortBy) {
     await applySort(page, sortBy);
   }
   
-  // Wait for results to load
+  // Wait for results
   await page.waitForTimeout(2000);
   
   // Extract results
   const results = await extractResults(page);
   
-  // Take verification screenshot
+  // Take screenshot
   let screenshotPath = null;
   if (verifyScreenshot) {
     const timestamp = Date.now();
-    screenshotPath = `/home/ubuntu/.openclaw/workspace/data/screenshots/marketplace_search_${query.replace(/[^a-z0-9]/gi, '_')}_${timestamp}.png`;
+    screenshotPath = `/home/ubuntu/.openclaw/workspace/data/screenshots/marketplace_${query.replace(/[^a-z0-9]/gi, '_')}_${timestamp}.png`;
     await page.screenshot({ path: screenshotPath, fullPage: false });
   }
   
@@ -179,78 +157,39 @@ async function marketplaceSearch({
   };
 }
 
-async function applyFilters(page, { priceMin, priceMax, condition, radius }) {
-  try {
-    // Click on "Filters" button if visible
-    const filterBtn = page.locator('text=Filters').or(page.locator('[aria-label*="Filter"]')).first();
-    if (await filterBtn.isVisible({ timeout: 2000 })) {
-      await filterBtn.click();
-      await page.waitForTimeout(1000);
-      
-      // Apply price filters if provided
-      if (priceMin !== undefined) {
-        const minInput = page.locator('input[placeholder*="Min"]').or(page.locator('input[id*="min"]'));
-        if (await minInput.isVisible({ timeout: 1000 })) {
-          await minInput.fill(String(priceMin));
-        }
-      }
-      
-      if (priceMax !== undefined) {
-        const maxInput = page.locator('input[placeholder*="Max"]').or(page.locator('input[id*="max"]'));
-        if (await maxInput.isVisible({ timeout: 1000 })) {
-          await maxInput.fill(String(priceMax));
-        }
-      }
-      
-      // Apply condition if provided
-      if (condition) {
-        const conditionMap = {
-          'new': 'New',
-          'used': 'Used',
-          'used_like_new': 'Used - Like New'
-        };
-        const conditionText = conditionMap[condition] || condition;
-        const conditionBtn = page.locator(`text="${conditionText}"`).first();
-        if (await conditionBtn.isVisible({ timeout: 1000 })) {
-          await conditionBtn.click();
-        }
-      }
-      
-      // Click Apply
-      const applyBtn = page.locator('text=Apply').or(page.locator('[aria-label*="Apply"]')).first();
-      if (await applyBtn.isVisible({ timeout: 1000 })) {
-        await applyBtn.click();
-        await page.waitForTimeout(1500);
-      }
-    }
-  } catch (e) {
-    // Filters not available, continue without them
-  }
-}
-
 async function applySort(page, sortBy) {
   try {
-    const sortBtn = page.locator('text=Sort').or(page.locator('[aria-label*="Sort"]')).first();
+    // Click sort button - Facebook uses various selectors
+    const sortBtn = page.locator('span:has-text("Sort")').first();
     if (await sortBtn.isVisible({ timeout: 2000 })) {
       await sortBtn.click();
       await page.waitForTimeout(1000);
-      
-      const sortMap = {
-        'newest': 'Newest',
-        'price_asc': 'Price: Low to High',
-        'price_desc': 'Price: High to Low',
-        'relevance': 'Relevance'
-      };
-      
-      const sortText = sortMap[sortBy] || sortBy;
-      const option = page.locator(`text="${sortText}"`).first();
-      if (await option.isVisible({ timeout: 1000 })) {
+    } else {
+      // Try aria-label
+      const sortBtn2 = page.locator('[aria-label*="Sort"]').first();
+      if (await sortBtn2.isVisible({ timeout: 1000 })) {
+        await sortBtn2.click();
+        await page.waitForTimeout(1000);
+      }
+    }
+    
+    const sortMap = {
+      'newest': 'Newest',
+      'price_asc': 'Price: Low to High',
+      'price_desc': 'Price: High to Low',
+      'relevance': 'Relevance'
+    };
+    
+    const sortText = sortMap[sortBy];
+    if (sortText) {
+      const option = page.locator('div[role="menu"] span').filter({ hasText: sortText }).first();
+      if (await option.isVisible({ timeout: 2000 })) {
         await option.click();
         await page.waitForTimeout(1500);
       }
     }
   } catch (e) {
-    // Sort not available, continue
+    // Sort not critical, continue
   }
 }
 
@@ -258,83 +197,51 @@ async function extractResults(page) {
   const results = [];
   
   try {
-    // Find all listing links
+    // Find all marketplace listing links
     const listingLinks = await page.locator('a[href*="/marketplace/item/"]').all();
     
-    for (const link of listingLinks.slice(0, 50)) { // Limit to 50 results
+    for (const link of listingLinks.slice(0, 50)) {
       try {
         const href = await link.getAttribute('href');
         const text = await link.textContent();
         
-        // Step 1: Extract price first (before messing with location)
-        const allPrices = text.match(/\$[\d,]+(?:\.\d{2})?/g) || [];
-        // Use the price closest to the start of text (usually the listing price)
-        const price = allPrices.length > 0 ? allPrices[0] : null;
+        if (!text || !href) continue;
         
-        // Step 2: Remove price from text to simplify location extraction
-        let textWithoutPrice = text;
-        for (const p of allPrices) {
-          textWithoutPrice = textWithoutPrice.replace(p, ' ');
-        }
+        // Extract price - look for dollar amounts
+        const priceMatch = text.match(/\$[\d,]+(?:\.\d{2})?/);
+        const price = priceMatch ? priceMatch[0] : null;
         
-        // Step 3: Find location at end (using cleaned text)
-        const stateMatch = textWithoutPrice.match(/, ([A-Z]{2})$/);
-        let location = null;
-        let beforeLocation = '';
+        // Extract location - look for "City, ST" pattern at end
+        const locationMatch = text.match(/, ([A-Z]{2})\s*$/m);
+        const location = locationMatch ? locationMatch[0].replace(', ', '').trim() : null;
         
-        if (stateMatch) {
-          const commaIndex = stateMatch.index;
-          const state = stateMatch[1];
-          const beforeComma = textWithoutPrice.slice(0, commaIndex);
-          
-          // Find city start by looking backwards for transition
-          let cityStart = -1;
-          
-          for (let i = commaIndex - 1; i >= 0; i--) {
-            const curr = beforeComma[i];
-            const next = beforeComma[i + 1];
-            
-            if (curr === ' ' && /[A-Z]/.test(next)) {
-              cityStart = i + 1;
-              break;
-            }
-            if (/[a-z]/.test(curr) && /[A-Z]/.test(next)) {
-              cityStart = i + 1;
-              break;
-            }
-          }
-          
-          if (cityStart < 0) {
-            const lastSpace = beforeComma.lastIndexOf(' ');
-            cityStart = Math.max(0, lastSpace + 1);
-          }
-          
-          location = beforeComma.slice(cityStart) + ', ' + state;
-          beforeLocation = beforeComma.slice(0, cityStart);
-        }
-        
-        // Step 4: Title = everything before location
-        let title = beforeLocation || textWithoutPrice;
-        
-        // Clean up
-        title = title
-          .replace(/^Just listed\s*/i, '')
-          .replace(/^Partner listing\s*/i, '')
-          .replace(/^[\s—–-]+/, '')
+        // Extract title - text before price/location, cleaned
+        let title = text
+          .replace(/\$[\d,]+(?:\.\d{2})?/g, '')
+          .replace(/, [A-Z]{2}\s*$/m, '')
           .replace(/\s+/g, ' ')
-          .trim()
-          .slice(0, 100);
+          .trim();
+        
+        // Clean common prefixes
+        title = title
+          .replace(/^(Just listed|Partner listing)\s*/i, '')
+          .trim();
+        
+        // Truncate long titles
+        if (title.length > 100) {
+          title = title.slice(0, 100) + '...';
+        }
         
         if (title && price) {
           results.push({
             title,
             price,
             location,
-            url: href?.startsWith('http') ? href : `https://www.facebook.com${href}`
+            url: href.startsWith('http') ? href : `https://www.facebook.com${href}`
           });
         }
       } catch (e) {
-        // Skip this card
+        // Skip bad card
       }
     }
   } catch (e) {

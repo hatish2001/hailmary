@@ -27,11 +27,69 @@
           },
           "headless": {
             "type": "boolean",
-            "default": true,
-            "description": "Run browser in headless mode"
+            "default": false,
+            "description": "Run browser in headless mode (set false for xvfb)"
           }
         },
         "required": ["site"]
+      }
+    },
+    {
+      "name": "loginWithCredentials",
+      "description": "Log into Facebook using email and password credentials. Saves cookies automatically after successful login so future sessions don't need credentials.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "REQUIRED: Facebook email address"
+          },
+          "password": {
+            "type": "string",
+            "description": "REQUIRED: Facebook password"
+          },
+          "saveCookies": {
+            "type": "boolean",
+            "default": true,
+            "description": "Whether to save cookies after successful login"
+          }
+        },
+        "required": ["email", "password"]
+      }
+    },
+    {
+      "name": "loginAndSearch",
+      "description": "Facebook login + marketplace search in ONE operation. Uses fresh Chrome profile, preserves session. Best for quick searches without managing cookies separately.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "REQUIRED: Search term (e.g., 'bmw 330i')"
+          },
+          "category": {
+            "type": "string",
+            "enum": ["vehicles", "electronics", "clothing", "furniture", "property", "rentals"],
+            "description": "Category to search"
+          },
+          "location": {
+            "type": "string",
+            "description": "Location (e.g., 'Upland, CA')"
+          },
+          "radius": {
+            "type": "number",
+            "description": "Search radius in miles"
+          },
+          "priceMin": {
+            "type": "number",
+            "description": "Minimum price"
+          },
+          "priceMax": {
+            "type": "number",
+            "description": "Maximum price"
+          }
+        },
+        "required": ["query"]
       }
     },
     {

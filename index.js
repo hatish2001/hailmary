@@ -4,6 +4,8 @@ const tools = require('./schema/tools.json');
 // Import actions
 const actions = {
   login: require('./actions/login'),
+  loginWithCredentials: require('./actions/loginWithCredentials'),
+  loginAndSearch: require('./actions/loginAndSearch'),
   marketplaceSearch: require('./actions/marketplaceSearch'),
   analyzeProduct: require('./actions/analyzeProduct'),
   enterPin: require('./actions/enterPin'),
@@ -16,6 +18,7 @@ const actions = {
   wait: require('./actions/wait'),
   pressKey: require('./actions/pressKey'),
   close: closeBrowser,
+  bn_map_page_deep: require('./actions/bn_map_page_deep'),
 };
 
 // Execute a tool by name with parameters
