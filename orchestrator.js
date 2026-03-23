@@ -3,13 +3,38 @@
  * 
  * Designed to be spawned as a sub-agent via sessions_spawn.
  * Gets a goal + URL, maps the page, reasons with the model, executes.
- * 
- * Usage (as module):
- *   const { runOrchestration } = require('./orchestrator');
- *   await runOrchestration({ goal, url, sessionLabel });
  */
 
-const { executeTool, executeSequence } = require('./index');
+const { getPage } = require('./browser/manager');
+const navigate = require('./actions/navigate');
+const bn_map_page_deep = require('./actions/bn_map_page_deep');
+const click = require('./actions/click');
+const type = require('./actions/type');
+const wait = require('./actions/wait');
+const pressKey = require('./actions/pressKey');
+const screenshot = require('./actions/screenshot');
+const getUrl = require('./actions/getUrl');
+const getText = require('./actions/getText');
+
+// Map tool names to action functions
+const ACTIONS = {
+  navigate,
+  bn_map_page_deep,
+  click,
+  type,
+  wait,
+  pressKey,
+  screenshot,
+  getUrl,
+  getText,
+};
+
+// Aliases for model convenience
+const ALIASES = {
+  press: 'pressKey',
+  enter: 'pressKey',
+  submit: 'pressKey',
+};
 
 // ─── ORCHESTRATOR PROMPT ────────────────────────────────────────────────────
 
@@ -43,7 +68,7 @@ Selectors (in order of preference):
 3. \`input[placeholder="Exact Placeholder"]\` — for form fields
 4. \`button:has-text("Button Text")\` — for buttons
 5. \`a:has-text("Link Text")\` — for links
-6. \`${el.tag}[role="button"]\` — for clickable divs
+6. \`[role="button"]\` — for clickable divs
 
 IMPORTANT:
 - If the goal is to SEARCH on a specific SITE, use that site's search input (e.g. "Search Marketplace" NOT "Search Facebook")
@@ -129,50 +154,94 @@ function buildContext({ goal, map, summary }) {
     .replace('{modals}', modals || '  (none)');
 }
 
-// ─── RESOLVE SELECTOR ──────────────────────────────────────────────────────
+// ─── EXECUTE SINGLE ACTION ──────────────────────────────────────────────────
 
-/**
- * Convert a model output selector string to a Playwright-compatible selector
- * The model outputs strings like "[aria-label='Foo']" or "button:has-text('Bar')"
- * Playwright accepts these directly via page.locator(selector)
- */
-function resolveSelector(el, map) {
-  if (!el) return null;
-  
-  // If model already gave a selector string, return it
-  if (typeof el === 'string') return el;
-  
-  // Build from element properties
-  if (el.attrs && el.attrs['aria-label']) {
-    return `[aria-label="${el.attrs['aria-label']}"]`;
+async function executeAction(toolName, params) {
+  const resolved = ALIASES[toolName] || toolName;
+  const action = ACTIONS[resolved];
+  if (!action) {
+    return { success: false, error: 'UNKNOWN_TOOL', message: `Unknown tool: ${resolved} (tried ${toolName})` };
   }
-  if (el.attrs && el.attrs.id) {
-    return `#${el.attrs.id}`;
+  try {
+    return await action(params);
+  } catch (e) {
+    return { success: false, error: 'EXECUTION_ERROR', message: e.message };
   }
-  if (el.tag === 'input' && el.attrs && el.attrs.placeholder) {
-    return `input[placeholder="${el.attrs.placeholder}"]`;
-  }
-  if (el.tag === 'input' && el.attrs && el.attrs.type) {
-    return `input[type="${el.attrs.type}"]`;
-  }
-  if (el.text) {
-    return `${el.tag}:has-text("${el.text.substring(0, 50)}")`;
-  }
-  return el.tag || 'body';
 }
 
-// ─── MAIN ORCHESTRATION ─────────────────────────────────────────────────────
+// ─── EXECUTE SEQUENCE ───────────────────────────────────────────────────────
 
-/**
- * Run orchestration for a single step: map page, get plan, execute.
- */
+async function executeSequence(actions) {
+  const results = [];
+  for (const { tool, params } of actions) {
+    const result = await executeAction(tool, params);
+    results.push({ tool, params, result });
+    if (!result.success && result.error) {
+      console.log(`[ORCHESTRATOR] ${tool} failed: ${result.message}`);
+    }
+  }
+  return results;
+}
+
+// ─── CALL MODEL ─────────────────────────────────────────────────────────────
+
+async function callModel({ baseUrl, model, apiKey, system, user }) {
+  const isMinimax = baseUrl.includes('minimaxi');
+  const body = {
+    model,
+    messages: [
+      { role: 'system', content: system },
+      { role: 'user', content: user }
+    ],
+    temperature: 0.1,
+  };
+  
+  if (isMinimax) {
+    body.tokens_to_generate = 400;
+  } else {
+    body.max_tokens = 600;
+  }
+
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`
+    },
+    body: JSON.stringify(body)
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`API ${response.status}: ${text.substring(0, 200)}`);
+  }
+
+  const data = await response.json();
+  const content = data.choices?.[0]?.message?.content || '';
+  
+  let json = content;
+  const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (jsonMatch) json = jsonMatch[1];
+  const objectMatch = json.match(/\{[\s\S]*\}/);
+  if (objectMatch) json = objectMatch[0];
+  
+  return JSON.parse(json.trim());
+}
+
+// ─── ORCHESTRATE STEP ───────────────────────────────────────────────────────
+
 async function orchestrateStep({ goal, map, summary, apiKey, model }) {
   const context = buildContext({ goal, map, summary });
+  const resolvedApiKey = apiKey || process.env.MINIMAX_API_KEY || process.env.MINIMAX_API_TOKEN;
+  
+  if (!resolvedApiKey) {
+    return { error: 'No API key provided and MINIMAX_API_KEY not set in environment', actions: [] };
+  }
+
+  const isOpenAI = apiKey && apiKey.startsWith('sk-') && !apiKey.includes('minimax');
   
   let plan;
-  
-  if (apiKey) {
-    // Use OpenAI-compatible API
+  if (isOpenAI) {
     try {
       plan = await callModel({ 
         baseUrl: 'https://api.openai.com/v1',
@@ -185,12 +254,11 @@ async function orchestrateStep({ goal, map, summary, apiKey, model }) {
       return { error: `Model API failed: ${e.message}`, actions: [] };
     }
   } else {
-    // Try Minimax
     try {
       plan = await callModel({
         baseUrl: 'https://api.minimaxi.chat/v1',
         model: model || 'MiniMax-M2.7',
-        apiKey: process.env.MINIMAX_API_KEY || process.env.MINIMAX_API_TOKEN,
+        apiKey: resolvedApiKey,
         system: SYSTEM_PROMPT,
         user: context
       });
@@ -203,15 +271,6 @@ async function orchestrateStep({ goal, map, summary, apiKey, model }) {
     return { error: 'No valid plan from model', actions: [], done: true };
   }
 
-  // Post-process: ensure all actions have proper selector resolution
-  plan.actions = plan.actions.map(a => {
-    if (a.params && a.params.selector && typeof a.params.selector === 'string') {
-      // Selector is already a string from the model — pass through
-      // The click/type tools use page.locator(selector) which handles CSS/Aria/text
-    }
-    return a;
-  });
-
   return {
     reasoning: plan.reasoning || '',
     actions: plan.actions,
@@ -220,64 +279,8 @@ async function orchestrateStep({ goal, map, summary, apiKey, model }) {
   };
 }
 
-/**
- * Call the language model
- */
-async function callModel({ baseUrl, model, apiKey, system, user }) {
-  const response = await fetch(`${baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`
-    },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user', content: user }
-      ],
-      temperature: 0.1,
-      max_tokens: 600
-    })
-  });
+// ─── FULL ORCHESTRATION LOOP ────────────────────────────────────────────────
 
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`API ${response.status}: ${text.substring(0, 200)}`);
-  }
-
-  const data = await response.json();
-  const content = data.choices?.[0]?.message?.content || '';
-  
-  // Try to extract JSON from the response
-  let json = content;
-  
-  // Handle markdown code blocks
-  const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (jsonMatch) {
-    json = jsonMatch[1];
-  }
-  
-  // Try to find JSON object in the response
-  const objectMatch = json.match(/\{[\s\S]*\}/);
-  if (objectMatch) {
-    json = objectMatch[0];
-  }
-  
-  return JSON.parse(json.trim());
-}
-
-// ─── FULL ORCHESTRATION LOOP ─────────────────────────────────────────────────
-
-/**
- * orchestrate — Run the full orchestration loop
- * @param {Object} opts
- * @param {string} opts.goal — Natural language goal
- * @param {string} opts.url — Starting URL
- * @param {string} [opts.apiKey] — API key for model (optional)
- * @param {string} [opts.model] — Model name
- * @param {number} [opts.maxSteps=5] — Max orchestration steps
- */
 async function orchestrate({ goal, url, apiKey = null, model = null, maxSteps = 5 } = {}) {
   const stepResults = [];
   let currentUrl = url;
@@ -286,7 +289,7 @@ async function orchestrate({ goal, url, apiKey = null, model = null, maxSteps = 
   for (let step = 0; step < maxSteps; step++) {
     // 1. Navigate if needed
     if (step === 0 || currentUrl !== url) {
-      const nav = await executeTool('navigate', { url: currentUrl });
+      const nav = await executeAction('navigate', { url: currentUrl });
       if (!nav.success) {
         return { success: false, message: `Navigate failed: ${nav.message}`, steps: stepResults };
       }
@@ -294,7 +297,7 @@ async function orchestrate({ goal, url, apiKey = null, model = null, maxSteps = 
     }
 
     // 2. Map the page
-    const mapResult = await executeTool('bn_map_page_deep', { maxScrolls: 10, scrollDelay: 800 });
+    const mapResult = await executeAction('bn_map_page_deep', { maxScrolls: 10, scrollDelay: 800 });
     if (!mapResult.success) {
       return { success: false, message: `Map failed: ${mapResult.message}`, steps: stepResults };
     }
@@ -355,7 +358,7 @@ async function orchestrate({ goal, url, apiKey = null, model = null, maxSteps = 
       currentUrl = navAction.params.url;
     }
 
-    // 7. Wait for page to settle after click/type
+    // 7. Wait for page to settle
     await new Promise(r => setTimeout(r, 1500));
   }
 
