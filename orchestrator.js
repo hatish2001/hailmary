@@ -34,6 +34,7 @@ const ALIASES = {
   press: 'pressKey',
   enter: 'pressKey',
   submit: 'pressKey',
+  pressEnter: 'pressKey',
 };
 
 // ─── ORCHESTRATOR PROMPT ────────────────────────────────────────────────────
@@ -158,12 +159,22 @@ function buildContext({ goal, map, summary }) {
 
 async function executeAction(toolName, params) {
   const resolved = ALIASES[toolName] || toolName;
+  
+  // Auto-fill params for special aliases
+  let resolvedParams = { ...params };
+  if (toolName === 'pressEnter' && Object.keys(resolvedParams).length === 0) {
+    resolvedParams = { key: 'Enter' };
+  }
+  if ((toolName === 'press' || toolName === 'enter') && Object.keys(resolvedParams).length === 0) {
+    resolvedParams = { key: 'Enter' };
+  }
+  
   const action = ACTIONS[resolved];
   if (!action) {
     return { success: false, error: 'UNKNOWN_TOOL', message: `Unknown tool: ${resolved} (tried ${toolName})` };
   }
   try {
-    return await action(params);
+    return await action(resolvedParams);
   } catch (e) {
     return { success: false, error: 'EXECUTION_ERROR', message: e.message };
   }
